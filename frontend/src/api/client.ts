@@ -53,6 +53,15 @@ export interface Stats {
   by_status: Record<string, number>
 }
 
+export interface Persona {
+  full_name: string
+  short_name: string
+  phone: string
+  industry: string
+  background: string
+  tone_rules: string
+}
+
 // ─── API calls ───────────────────────────────────────────────────────────────
 
 export const fetchTargets = (params?: Record<string, string | number | boolean>) =>
@@ -96,3 +105,9 @@ export const sendLinkedIn = (messageId: number) =>
 
 export const sendBatch = (message_ids: number[]) =>
   api.post('/send/batch', { message_ids }).then((r) => r.data)
+
+export const fetchPersona = () =>
+  api.get('/persona').then((r) => r.data as Persona)
+
+export const savePersona = (data: Persona) =>
+  api.post('/persona', data).then((r) => r.data)

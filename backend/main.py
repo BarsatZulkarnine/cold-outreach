@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from database import init_db
 from config import BACKEND_PORT, FRONTEND_PORT
-from routers import discovery, messaging, sending, tracking
+from routers import discovery, messaging, sending, tracking, persona
 
 
 @asynccontextmanager
@@ -58,6 +58,7 @@ app.include_router(discovery.router)
 app.include_router(messaging.router)
 app.include_router(sending.router)
 app.include_router(tracking.router)
+app.include_router(persona.router)
 
 
 @app.get("/")

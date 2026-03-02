@@ -3,6 +3,7 @@
 *.env
 credentials.json
 gmail_token.json
+persona.json
 linkedin_cookies.json
 linkedin_rate_limit.json
 linkedin_daily_counts.json

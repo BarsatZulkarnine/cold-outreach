@@ -16,6 +16,7 @@ async def list_targets(
     source: Optional[str] = Query(None),
     has_email: Optional[bool] = Query(None),
     has_linkedin: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -34,6 +35,8 @@ async def list_targets(
         query = query.where(Target.linkedin_url.isnot(None))
     if has_linkedin is False:
         query = query.where(Target.linkedin_url.is_(None))
+    if search:
+        query = query.where(Target.company_name.ilike(f"%{search}%"))
 
     # Total count
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))

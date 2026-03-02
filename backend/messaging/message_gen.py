@@ -1,19 +1,50 @@
 import json
 import os
 import anthropic
-from messaging.prompt_templates import LINKEDIN_DM_PROMPT, COLD_EMAIL_PROMPT, FOLLOWUP_PROMPT
+from messaging.prompt_templates import build_linkedin_dm_prompt, build_cold_email_prompt, build_followup_prompt
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+_PERSONA_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "persona.json")
+
+_DEFAULT_PERSONA = {
+    "full_name": "Mohammed Barsat Zulkarnine",
+    "short_name": "Barsat",
+    "phone": "0475 128 013",
+    "industry": "Software Engineering",
+    "background": (
+        "- Built real-time vehicle telemetry dashboard at Skyledge "
+        "(Next.js, FastAPI, MongoDB, WebSockets, scikit-learn, Docker)\n"
+        "- Interned at Nexobot building Vue.js components, CI/CD pipelines, route optimisation\n"
+        "- Side projects: IoT EpiPen emergency alert system, cloud-deployed AI chatbot\n"
+        "- Started coding in 6th grade, competed in Bangladesh national programming contest "
+        "(reached finals twice in junior division), has a homelab\n"
+        "- Visa: Temporary Graduate Visa, valid until Feb 2028, can work full-time anywhere in AU"
+    ),
+    "tone_rules": (
+        "Direct and honest. Not formal. Not desperate.\n"
+        'Hates buzzwords: never use "passionate about", "synergy", "leverage", '
+        '"I hope this message finds you well", "hardworking team player", "excited to".\n'
+        "Short sentences. No waffle. No padding.\n"
+        'Sign off with just the short_name — no "Kind regards", no "Best wishes".'
+    ),
+}
+
+
+def _load_persona() -> dict:
+    try:
+        with open(_PERSONA_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return _DEFAULT_PERSONA
 
 
 def _clean(text: str) -> str:
     """Post-process generated text: remove em dashes, clean up spacing."""
-    # Replace em dash variants with a comma or period depending on context
     text = text.replace(" — ", ", ")
     text = text.replace("— ", ". ")
     text = text.replace(" —", ".")
     text = text.replace("—", ", ")
-    # Remove en dashes used mid-sentence
     text = text.replace(" – ", ", ")
     text = text.replace("– ", ". ")
     text = text.replace(" –", ".")
@@ -21,14 +52,8 @@ def _clean(text: str) -> str:
 
 
 async def generate_linkedin_dm(target: dict) -> str:
-    prompt = LINKEDIN_DM_PROMPT.format(
-        contact_name=target.get("contact_name") or "there",
-        contact_title=target.get("contact_title") or "",
-        company_name=target["company_name"],
-        context=target.get("notes") or "No additional context",
-        tech_stack=", ".join(target.get("tech_stack") or []) or "Unknown",
-        open_roles=target.get("open_role_url") or "None listed on website",
-    )
+    persona = _load_persona()
+    prompt = build_linkedin_dm_prompt(persona, target)
 
     response = client.messages.create(
         model="claude-opus-4-6",
@@ -39,14 +64,8 @@ async def generate_linkedin_dm(target: dict) -> str:
 
 
 async def generate_cold_email(target: dict) -> dict:
-    prompt = COLD_EMAIL_PROMPT.format(
-        contact_name=target.get("contact_name") or "there",
-        contact_title=target.get("contact_title") or "",
-        company_name=target["company_name"],
-        context=target.get("notes") or "No additional context",
-        tech_stack=", ".join(target.get("tech_stack") or []) or "Unknown",
-        open_roles=target.get("open_role_url") or "None listed on website",
-    )
+    persona = _load_persona()
+    prompt = build_cold_email_prompt(persona, target)
 
     response = client.messages.create(
         model="claude-opus-4-6",
@@ -78,13 +97,8 @@ async def generate_followup(
     channel: str,
     days_ago: int,
 ) -> str:
-    prompt = FOLLOWUP_PROMPT.format(
-        contact_name=target.get("contact_name") or "there",
-        company_name=target["company_name"],
-        channel=channel,
-        days_ago=days_ago,
-        original_message=original_message,
-    )
+    persona = _load_persona()
+    prompt = build_followup_prompt(persona, target, original_message, channel, days_ago)
 
     response = client.messages.create(
         model="claude-opus-4-6",
