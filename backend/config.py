@@ -44,13 +44,34 @@ MAX_DELAY_BETWEEN_ACTIONS_SEC = 420
 MIN_DELAY_BETWEEN_SENDS_SEC = 120
 MAX_DELAY_BETWEEN_SENDS_SEC = 300
 
-# Default Google Maps queries for Melbourne tech scene
+# Default Google Maps queries for Melbourne tech scene.
+# Suburb-specific queries use tighter GPS bias toward that suburb (see maps_scraper.py).
+# Generic "Melbourne" queries use a broad 30km radius from CBD.
 DEFAULT_MAPS_QUERIES = [
+    # Generic — broad Melbourne sweep
     "software company Melbourne VIC",
     "IT company Melbourne",
     "tech startup Melbourne",
+    "SaaS company Melbourne",
+    "software agency Melbourne",
+    # Inner-east tech corridor
     "software development company Cremorne Melbourne",
     "software development company Richmond Melbourne",
     "software development company Collingwood Melbourne",
-    "SaaS company Melbourne",
+    "tech company Fitzroy Melbourne",
+    "software company Abbotsford Melbourne",
+    # Inner-north
+    "software company Northcote Melbourne",
+    "tech company Brunswick Melbourne",
+    "software company Carlton Melbourne",
+    # Inner-south / south-east
+    "software company South Melbourne",
+    "tech company Southbank Melbourne",
+    "software company Prahran Melbourne",
+    "software company South Yarra Melbourne",
+    "software company Hawthorn Melbourne",
+    # West / Docklands
+    "tech company Docklands Melbourne",
+    # East
+    "software company Box Hill Melbourne",
 ]
