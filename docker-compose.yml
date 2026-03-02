@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./.env:/app/.env
+      - ./outreach.db:/app/outreach.db
+      - ./gmail_token.json:/app/gmail_token.json
+      - ./linkedin_cookies.json:/app/linkedin_cookies.json
+    environment:
+      - DATABASE_URL=sqlite:///./outreach.db
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend

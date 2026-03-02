@@ -1,0 +1,37 @@
+# Environment & secrets
+.env
+*.env
+credentials.json
+gmail_token.json
+linkedin_cookies.json
+linkedin_rate_limit.json
+linkedin_daily_counts.json
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
