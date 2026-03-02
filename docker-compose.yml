@@ -1,16 +1,26 @@
 version: "3.9"
+
+# Run `./start.sh` instead of `docker compose up` directly.
+# start.sh pre-creates the required bind-mount files so Docker doesn't
+# accidentally create them as directories, which breaks everything.
+
 services:
   backend:
     build: ./backend
     ports:
       - "8001:8001"
     volumes:
-      - ./.env:/app/.env
+      - ./.env:/app/.env:ro
       - ./outreach.db:/app/outreach.db
+      - ./persona.json:/app/persona.json
+      - ./credentials.json:/app/credentials.json
       - ./gmail_token.json:/app/gmail_token.json
       - ./linkedin_cookies.json:/app/linkedin_cookies.json
+      - ./linkedin_rate_limit.json:/app/linkedin_rate_limit.json
+      - ./linkedin_daily_counts.json:/app/linkedin_daily_counts.json
     environment:
       - DATABASE_URL=sqlite:///./outreach.db
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
@@ -18,3 +28,4 @@ services:
       - "5174:80"
     depends_on:
       - backend
+    restart: unless-stopped
