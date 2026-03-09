@@ -28,6 +28,14 @@ AsyncSessionLocal = async_sessionmaker(
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migration: add scheduled_send_at column if it doesn't exist yet
+        if "sqlite" in DATABASE_URL:
+            from sqlalchemy import text
+            try:
+                await conn.execute(text("ALTER TABLE messages ADD COLUMN scheduled_send_at DATETIME"))
+                print("[DB] Migrated: added scheduled_send_at column.")
+            except Exception:
+                pass  # Column already exists
     print("[DB] Tables created / verified.")
 
 

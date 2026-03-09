@@ -61,6 +61,7 @@ class Message(Base):
     # status: pending_approval | approved | sent | rejected
     generated_at = Column(DateTime, default=datetime.utcnow)
     sent_at = Column(DateTime, nullable=True)
+    scheduled_send_at = Column(DateTime, nullable=True)  # scheduled delivery time (email only)
     opened = Column(Boolean, default=False)           # email only
     replied = Column(Boolean, default=False)
     follow_up_sent = Column(Boolean, default=False)
@@ -137,6 +138,7 @@ class MessageOut(MessageBase):
     id: int
     generated_at: datetime
     sent_at: Optional[datetime] = None
+    scheduled_send_at: Optional[datetime] = None
     opened: bool
     replied: bool
     follow_up_sent: bool

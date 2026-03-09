@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchTargets, sendBatch, type Target, type Message } from '../api/client'
+import { fetchTargets, sendBatch, scheduleEmail, scheduleBatch, type Target, type Message } from '../api/client'
 import { MessagePreview } from '../components/MessagePreview'
 import { useToast } from '../components/Toast'
 import api from '../api/client'
@@ -24,7 +24,9 @@ export function Outreach() {
   const [approved, setApproved] = useState<MessageWithTarget[]>([])
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [scheduling, setScheduling] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
+  const [confirmSchedule, setConfirmSchedule] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -78,6 +80,32 @@ export function Outreach() {
     }
   }
 
+  async function handleScheduleAll() {
+    const emailMsgs = approved.filter((m) => m.channel === 'email' && !m.scheduled_send_at)
+    if (!emailMsgs.length) return
+    setScheduling(true)
+    setConfirmSchedule(false)
+    try {
+      const result = await scheduleBatch(emailMsgs.map((m) => m.id))
+      toast(`Scheduled ${result.scheduled} email(s)`, 'success')
+      await load()
+    } catch (e: any) {
+      toast(e?.response?.data?.detail ?? 'Scheduling failed', 'error')
+    } finally {
+      setScheduling(false)
+    }
+  }
+
+  async function handleScheduleOne(msgId: number) {
+    try {
+      const result = await scheduleEmail(msgId)
+      toast(`Scheduled for ${result.scheduled_for_melbourne}`, 'success')
+      await load()
+    } catch (e: any) {
+      toast(e?.response?.data?.detail ?? 'Schedule failed', 'error')
+    }
+  }
+
   if (loading) return <div className="text-gray-500 p-8 text-center text-sm">Loading messages...</div>
 
   return (
@@ -116,32 +144,56 @@ export function Outreach() {
             Approved & Ready <span className="text-gray-600 font-normal normal-case">({approved.length})</span>
           </h2>
           {approved.length > 0 && (
-            confirmSend ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Send {approved.length} messages?</span>
+            <div className="flex items-center gap-2">
+              {/* Schedule All */}
+              {confirmSchedule ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">Schedule {approved.filter(m => m.channel === 'email' && !m.scheduled_send_at).length} emails?</span>
+                  <button
+                    onClick={handleScheduleAll}
+                    disabled={scheduling}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-sm rounded font-semibold disabled:opacity-50"
+                  >
+                    {scheduling && <Spinner />}
+                    Yes, schedule
+                  </button>
+                  <button onClick={() => setConfirmSchedule(false)} className="px-3 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-white">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={handleSendAll}
-                  disabled={sending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-sm rounded font-semibold disabled:opacity-50"
+                  onClick={() => setConfirmSchedule(true)}
+                  className="px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white text-sm rounded font-semibold transition-colors"
                 >
-                  {sending && <Spinner />}
-                  Yes, send
+                  Schedule All
                 </button>
+              )}
+              {/* Send All Now */}
+              {confirmSend ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">Send {approved.length} now?</span>
+                  <button
+                    onClick={handleSendAll}
+                    disabled={sending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-sm rounded font-semibold disabled:opacity-50"
+                  >
+                    {sending && <Spinner />}
+                    Yes, send
+                  </button>
+                  <button onClick={() => setConfirmSend(false)} className="px-3 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-white">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={() => setConfirmSend(false)}
-                  className="px-3 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-white"
+                  onClick={() => setConfirmSend(true)}
+                  className="px-4 py-2 bg-green-800 hover:bg-green-700 text-white text-sm rounded font-semibold transition-colors"
                 >
-                  Cancel
+                  Send All Now ({approved.length})
                 </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmSend(true)}
-                className="px-4 py-2 bg-green-800 hover:bg-green-700 text-white text-sm rounded font-semibold transition-colors"
-              >
-                Send All ({approved.length})
-              </button>
-            )
+              )}
+            </div>
           )}
         </div>
 
@@ -158,9 +210,25 @@ export function Outreach() {
                     <span className="font-semibold text-white text-sm">{m.company_name}</span>
                     {m.contact_name && <span className="text-gray-500 ml-2 text-xs">→ {m.contact_name}</span>}
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded ${m.channel === 'email' ? 'bg-purple-900 text-purple-300' : 'bg-blue-900 text-blue-300'}`}>
-                    {m.channel}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {m.scheduled_send_at && (
+                      <span className="text-xs text-blue-400 bg-blue-950 px-2 py-0.5 rounded">
+                        ⏰ {new Date(m.scheduled_send_at + 'Z').toLocaleString('en-AU', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Melbourne' })} AEST
+                      </span>
+                    )}
+                    {m.channel === 'email' && !m.scheduled_send_at && (
+                      <button
+                        onClick={() => handleScheduleOne(m.id)}
+                        className="text-xs px-2 py-0.5 bg-blue-900 hover:bg-blue-800 text-blue-200 rounded transition-colors"
+                        title="Schedule for optimal send time (Tue–Thu)"
+                      >
+                        Schedule
+                      </button>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded ${m.channel === 'email' ? 'bg-purple-900 text-purple-300' : 'bg-blue-900 text-blue-300'}`}>
+                      {m.channel}
+                    </span>
+                  </div>
                 </div>
                 {m.subject && <div className="text-xs text-gray-500 mb-1">Subject: {m.subject}</div>}
                 <pre className="text-xs text-gray-400 whitespace-pre-wrap bg-gray-950 rounded p-2 max-h-28 overflow-hidden font-mono leading-relaxed">

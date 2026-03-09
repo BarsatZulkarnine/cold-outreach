@@ -1,10 +1,87 @@
 import { useEffect, useState, useRef } from 'react'
 import {
-  fetchTargets, generateMessage, enrichTarget,
+  fetchTargets, generateMessage, enrichTarget, updateTarget, exportTargets,
   type Target,
 } from '../api/client'
 import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../components/Toast'
+
+const GENERIC_EMAIL_PREFIXES = ['info@', 'hello@', 'contact@', 'admin@', 'support@', 'noreply@', 'team@', 'enquiries@', 'enquiry@', 'mail@', 'office@']
+
+function isGenericEmail(email?: string): boolean {
+  if (!email) return false
+  return GENERIC_EMAIL_PREFIXES.some((p) => email.toLowerCase().startsWith(p))
+}
+
+function InlineEmailEdit({ target, onSaved }: { target: Target; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(target.contact_email ?? '')
+  const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function startEdit(e: React.MouseEvent) {
+    e.stopPropagation()
+    setValue(target.contact_email ?? '')
+    setEditing(true)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  async function save() {
+    if (value === target.contact_email) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await updateTarget(target.id, { contact_email: value || undefined })
+      toast('Email updated', 'success')
+      onSaved()
+    } catch {
+      toast('Failed to update email', 'error')
+    } finally {
+      setSaving(false)
+      setEditing(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+          className="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:border-blue-500 w-52"
+          placeholder="email@company.com"
+        />
+        {saving && <span className="text-gray-500 text-xs">saving...</span>}
+      </span>
+    )
+  }
+
+  const generic = isGenericEmail(target.contact_email)
+  return (
+    <span
+      className="inline-flex items-center gap-1 cursor-pointer group"
+      onClick={startEdit}
+      title="Click to edit email"
+    >
+      {target.contact_email ? (
+        <>
+          <span className={`text-xs ${generic ? 'text-orange-400' : 'text-gray-300'} group-hover:underline`}>
+            {target.contact_email}
+          </span>
+          {generic && (
+            <span title="Generic email — consider finding a direct contact" className="text-orange-500 text-xs">⚠</span>
+          )}
+          <span className="text-gray-700 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✏</span>
+        </>
+      ) : (
+        <span className="text-gray-700 text-xs group-hover:text-gray-500 italic">+ add email</span>
+      )}
+    </span>
+  )
+}
 
 const STATUS_OPTIONS = [
   '', 'discovered', 'message_generated', 'approved', 'sent', 'replied', 'meeting', 'rejected',
@@ -35,6 +112,7 @@ export function Targets() {
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [exportFilter, setExportFilter] = useState<'all' | 'true' | 'false'>('all')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -137,9 +215,26 @@ export function Targets() {
         <h1 className="text-2xl font-bold text-white">
           Targets <span className="text-gray-500 text-lg font-normal">({total})</span>
         </h1>
-        <button onClick={load} className="text-sm text-gray-400 hover:text-white border border-gray-700 px-3 py-1 rounded transition-colors">
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={exportFilter}
+            onChange={(e) => setExportFilter(e.target.value as 'all' | 'true' | 'false')}
+            className="bg-gray-900 border border-gray-700 text-xs rounded px-2 py-1.5 text-gray-400 focus:outline-none"
+          >
+            <option value="all">Export: All</option>
+            <option value="true">Export: Actively Hiring</option>
+            <option value="false">Export: Not Hiring</option>
+          </select>
+          <button
+            onClick={() => exportTargets(exportFilter)}
+            className="text-xs text-gray-300 hover:text-white border border-gray-700 px-3 py-1.5 rounded transition-colors"
+          >
+            Export CSV
+          </button>
+          <button onClick={load} className="text-sm text-gray-400 hover:text-white border border-gray-700 px-3 py-1 rounded transition-colors">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Search + filters */}
@@ -212,8 +307,8 @@ export function Targets() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0 text-xs">
                   <span
-                    className={t.contact_email ? 'text-green-500' : 'text-gray-800'}
-                    title={t.contact_email ? `Email: ${t.contact_email}` : 'No email'}
+                    className={t.contact_email ? (isGenericEmail(t.contact_email) ? 'text-orange-400' : 'text-green-500') : 'text-gray-800'}
+                    title={t.contact_email ? `Email: ${t.contact_email}${isGenericEmail(t.contact_email) ? ' (generic — click to fix)' : ''}` : 'No email'}
                   >✉</span>
                   <span
                     className={t.linkedin_url ? 'text-blue-500' : 'text-gray-800'}
@@ -227,12 +322,10 @@ export function Targets() {
               {expanded === t.id && (
                 <div className="border-t border-gray-800 bg-gray-950 px-4 py-4 space-y-3">
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-                    {t.contact_email && (
-                      <div className="col-span-2">
-                        <span className="text-gray-600 text-xs">Email </span>
-                        <span className="text-gray-300 text-xs">{t.contact_email}</span>
-                      </div>
-                    )}
+                    <div className="col-span-2">
+                      <span className="text-gray-600 text-xs">Email </span>
+                      <InlineEmailEdit target={t} onSaved={load} />
+                    </div>
                     {t.linkedin_url && (
                       <div>
                         <span className="text-gray-600 text-xs">LinkedIn </span>

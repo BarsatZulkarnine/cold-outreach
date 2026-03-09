@@ -1,11 +1,12 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database import get_db
 from models.schemas import Message, Target, BatchSendRequest
-from sending.email_sender import send_email, DailyLimitReachedError
+from sending.email_sender import send_email, DailyLimitReachedError, calculate_next_send_slot
 
 router = APIRouter(prefix="/send", tags=["sending"])
 
@@ -93,6 +94,69 @@ async def send_linkedin_message(
         raise HTTPException(status_code=500, detail="LinkedIn send failed")
 
     return {"sent": True, "message_id": message_id, "to": target.linkedin_url}
+
+
+@router.post("/email/{message_id}/schedule")
+async def schedule_single_email(
+    message_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Schedule an approved email for the next optimal send slot (Tue–Thu, 8:30/10:30–12/5–6pm AEST)."""
+    result = await db.execute(select(Message).where(Message.id == message_id))
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if msg.status != "approved":
+        raise HTTPException(status_code=400, detail=f"Message must be approved. Current status: {msg.status}")
+    if msg.channel != "email":
+        raise HTTPException(status_code=400, detail="Scheduling only supported for email messages")
+
+    slot_utc = calculate_next_send_slot()
+    msg.scheduled_send_at = slot_utc
+    await db.commit()
+
+    # Show Melbourne-local time in response
+    tz = ZoneInfo("Australia/Melbourne")
+    slot_local = slot_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+    return {
+        "scheduled": True,
+        "message_id": message_id,
+        "scheduled_for_utc": slot_utc.isoformat(),
+        "scheduled_for_melbourne": slot_local.strftime("%a %d %b, %I:%M %p AEST"),
+    }
+
+
+@router.post("/batch/schedule")
+async def schedule_batch_emails(
+    req: BatchSendRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Schedule multiple approved email messages, staggered across optimal slots."""
+    scheduled = 0
+    failed = []
+    offset = 0  # stagger messages by 15 minutes each
+
+    for msg_id in req.message_ids:
+        result = await db.execute(select(Message).where(Message.id == msg_id))
+        msg = result.scalar_one_or_none()
+
+        if not msg:
+            failed.append({"message_id": msg_id, "error": "not found"})
+            continue
+        if msg.status != "approved":
+            failed.append({"message_id": msg_id, "error": f"not approved (status: {msg.status})"})
+            continue
+        if msg.channel != "email":
+            failed.append({"message_id": msg_id, "error": "not an email message"})
+            continue
+
+        slot_utc = calculate_next_send_slot(offset_minutes=offset)
+        msg.scheduled_send_at = slot_utc
+        scheduled += 1
+        offset += 15  # 15-minute gap between scheduled sends
+
+    await db.commit()
+    return {"scheduled": scheduled, "failed": len(failed), "errors": failed}
 
 
 @router.post("/batch")

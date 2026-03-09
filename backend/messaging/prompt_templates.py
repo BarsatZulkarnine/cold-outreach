@@ -44,26 +44,55 @@ Write a DM that:
 Output ONLY the message. No subject line. No explanation.
 """
 
-_COLD_EMAIL_TEMPLATE = """
+_COLD_EMAIL_HIRING_TEMPLATE = """
 
 Write a cold email to {contact_name} ({contact_title} at {company_name}).
+
+They are ACTIVELY HIRING. Open role / careers page: {open_roles}
 
 Context about them/their company:
 {context}
 
 Their tech stack (if known): {tech_stack}
 
-Open roles at their company: {open_roles}
-
 Write:
-1. A subject line (short, plain, no clickbait — e.g. "grad dev looking for work")
+1. A subject line (short, plain — e.g. "junior dev — worth a look?")
 2. The email body
 
 Body rules:
-- Under 120 words. Be strict. Cut anything not essential.
-- First sentence: one specific observation about their company (not a compliment)
-- Second paragraph: one concrete project of {short_name}'s relevant to their stack. One or two sentences max.
-- Final line: the ask. Simple and direct.
+- Under 120 words. Be strict.
+- First sentence: reference the specific role or careers page — be direct, not fawning.
+- Second paragraph: one concrete project of {short_name}'s that matches their stack. One or two sentences.
+- Final line: clear ask — apply? chat? keep it low-pressure.
+- Signature (not counted in word limit):
+  {short_name}
+  {phone}
+  (plain text only, no email address, no URLs, no links)
+
+Output as JSON: {{"subject": "...", "body": "..."}}
+The body should include the signature at the end.
+"""
+
+_COLD_EMAIL_NOT_HIRING_TEMPLATE = """
+
+Write a cold email to {contact_name} ({contact_title} at {company_name}).
+
+They are NOT actively hiring — no open roles listed on their site.
+
+Context about them/their company:
+{context}
+
+Their tech stack (if known): {tech_stack}
+
+Write:
+1. A subject line (short, plain — e.g. "not sure if you're hiring, but...")
+2. The email body
+
+Body rules:
+- Under 120 words. Be strict.
+- First sentence: acknowledge there are no open roles — be upfront, don't pretend otherwise.
+- Second paragraph: one concrete project of {short_name}'s relevant to their stack. One or two sentences.
+- Final line: speculative ask — worth keeping in touch for when something opens up?
 - Signature (not counted in word limit):
   {short_name}
   {phone}
@@ -105,13 +134,15 @@ def build_linkedin_dm_prompt(persona: dict, target: dict) -> str:
 
 
 def build_cold_email_prompt(persona: dict, target: dict) -> str:
-    return (build_persona_context(persona) + _COLD_EMAIL_TEMPLATE).format(
+    is_hiring = bool(target.get("has_open_roles"))
+    template = _COLD_EMAIL_HIRING_TEMPLATE if is_hiring else _COLD_EMAIL_NOT_HIRING_TEMPLATE
+    return (build_persona_context(persona) + template).format(
         contact_name=target.get("contact_name") or "there",
         contact_title=target.get("contact_title") or "",
         company_name=target["company_name"],
         context=target.get("notes") or "No additional context",
         tech_stack=", ".join(target.get("tech_stack") or []) or "Unknown",
-        open_roles=target.get("open_role_url") or "None listed on website",
+        open_roles=target.get("open_role_url") or "careers page",
         short_name=persona.get("short_name", "there"),
         phone=persona.get("phone", ""),
     )

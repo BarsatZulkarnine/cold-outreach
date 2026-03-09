@@ -76,6 +76,58 @@ async def check_followups():
     print(f"[{datetime.utcnow().isoformat()}] [Scheduler] Follow-up check complete.")
 
 
+async def send_scheduled_emails():
+    """
+    Runs every 5 minutes. Finds approved email messages with scheduled_send_at <= now()
+    and sends them. Respects daily limit. Never auto-sends unscheduled messages.
+    """
+    from database import AsyncSessionLocal
+    from models.schemas import Message, Target
+    from sending.email_sender import send_email, DailyLimitReachedError
+    from sqlalchemy import select
+
+    now = datetime.utcnow()
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Message).where(
+                Message.status == "approved",
+                Message.channel == "email",
+                Message.scheduled_send_at.isnot(None),
+                Message.scheduled_send_at <= now,
+                Message.sent_at.is_(None),
+            )
+        )
+        messages = result.scalars().all()
+
+        if not messages:
+            return
+
+        print(f"[{now.isoformat()}] [Scheduler] {len(messages)} scheduled email(s) due.")
+
+        for msg in messages:
+            try:
+                target_result = await db.execute(select(Target).where(Target.id == msg.target_id))
+                target = target_result.scalar_one_or_none()
+                if not target or not target.contact_email:
+                    print(f"[Scheduler] Skipping msg {msg.id} — no contact email.")
+                    continue
+
+                print(f"[Scheduler] Sending → {target.contact_email} ({target.company_name})")
+                await send_email(
+                    to_email=target.contact_email,
+                    subject=msg.subject or "Quick note from Barsat",
+                    body=msg.body,
+                    message_id=msg.id,
+                    db=db,
+                )
+            except DailyLimitReachedError as e:
+                print(f"[Scheduler] Daily limit reached: {e}. Stopping.")
+                break
+            except Exception as e:
+                print(f"[Scheduler] Error sending scheduled email {msg.id}: {e}")
+
+
 def start_scheduler():
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
@@ -84,6 +136,13 @@ def start_scheduler():
         id="followup_check",
         replace_existing=True,
         misfire_grace_time=3600,  # Run even if missed by up to 1 hour
+    )
+    scheduler.add_job(
+        send_scheduled_emails,
+        trigger=CronTrigger(minute="*/5"),  # Every 5 minutes
+        id="scheduled_email_sender",
+        replace_existing=True,
+        misfire_grace_time=300,
     )
     scheduler.start()
     return scheduler

@@ -38,6 +38,7 @@ export interface Message {
   status: string
   generated_at: string
   sent_at?: string
+  scheduled_send_at?: string
   opened: boolean
   replied: boolean
   follow_up_sent: boolean
@@ -105,6 +106,17 @@ export const sendLinkedIn = (messageId: number) =>
 
 export const sendBatch = (message_ids: number[]) =>
   api.post('/send/batch', { message_ids }).then((r) => r.data)
+
+export const scheduleEmail = (messageId: number) =>
+  api.post(`/send/email/${messageId}/schedule`).then((r) => r.data as { scheduled: boolean; scheduled_for_melbourne: string })
+
+export const scheduleBatch = (message_ids: number[]) =>
+  api.post('/send/batch/schedule', { message_ids }).then((r) => r.data)
+
+export const exportTargets = (filter: 'all' | 'true' | 'false' = 'all') => {
+  const params = filter !== 'all' ? `?has_open_roles=${filter}` : ''
+  window.open(`/api/targets/export${params}`, '_blank')
+}
 
 export const fetchPersona = () =>
   api.get('/persona').then((r) => r.data as Persona)

@@ -1,6 +1,10 @@
+import csv
+import io
+import json
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -8,6 +12,56 @@ from database import get_db
 from models.schemas import Target, Message, TargetUpdate, TargetWithMessages, StatsOut
 
 router = APIRouter(prefix="/targets", tags=["tracking"])
+
+
+@router.get("/export")
+async def export_targets_csv(
+    has_open_roles: Optional[str] = Query(None, description="Filter: 'true', 'false', or omit for all"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export targets as CSV. Filter by has_open_roles=true/false/all."""
+    query = select(Target)
+    if has_open_roles == "true":
+        query = query.where(Target.has_open_roles == True)
+    elif has_open_roles == "false":
+        query = query.where(Target.has_open_roles == False)
+
+    result = await db.execute(query.order_by(Target.created_at.desc()))
+    targets = result.scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "company_name", "company_website", "contact_name", "contact_title",
+        "contact_email", "linkedin_url", "tech_stack", "has_open_roles",
+        "open_role_url", "status", "source", "notes", "created_at",
+    ])
+    for t in targets:
+        stack = t.get_tech_stack()
+        writer.writerow([
+            t.company_name,
+            t.company_website or "",
+            t.contact_name or "",
+            t.contact_title or "",
+            t.contact_email or "",
+            t.linkedin_url or "",
+            ", ".join(stack),
+            "Yes" if t.has_open_roles else "No",
+            t.open_role_url or "",
+            t.status,
+            t.source,
+            (t.notes or "").replace("\n", " "),
+            t.created_at.strftime("%Y-%m-%d") if t.created_at else "",
+        ])
+
+    output.seek(0)
+    label = "" if not has_open_roles else (f"_hiring" if has_open_roles == "true" else "_not_hiring")
+    filename = f"targets{label}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("")

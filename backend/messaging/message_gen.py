@@ -1,7 +1,7 @@
 import json
 import os
 import anthropic
-from messaging.prompt_templates import build_linkedin_dm_prompt, build_cold_email_prompt, build_followup_prompt
+from messaging.prompt_templates import build_linkedin_dm_prompt, build_followup_prompt
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -63,32 +63,80 @@ async def generate_linkedin_dm(target: dict) -> str:
     return _clean(response.content[0].text)
 
 
+_EMAIL_HIRING_SUBJECT = "junior dev – {company_name}"
+_EMAIL_HIRING_BODY = """\
+{greeting}
+
+Saw {company_name} is looking for a developer. Just graduated from Swinburne with a software engineering degree (distinction, Dec 2025) and spent the past year at Skyledge as a grad dev — built a real-time vehicle telemetry dashboard from scratch (FastAPI, Next.js, MongoDB, WebSockets, Docker).
+
+Would it make sense to have a quick chat?
+
+Barsat
+0475 128 013\
+"""
+
+_EMAIL_NOT_HIRING_SUBJECT = "junior dev – long shot"
+_EMAIL_NOT_HIRING_BODY = """\
+{greeting}
+
+Nothing on {company_name}'s site at the moment, so this is speculative. Just graduated from Swinburne (software engineering, distinction, Dec 2025). Spent the past year at Skyledge building a real-time vehicle telemetry dashboard — FastAPI, Next.js, MongoDB, WebSockets, Docker.
+
+Worth keeping in touch if something comes up?
+
+Barsat
+0475 128 013\
+"""
+
+# Words that indicate a scraped name is not actually a person's name
+_BAD_NAME_TOKENS = {
+    "customers", "client", "team", "staff", "admin", "manager", "hr",
+    "recruit", "hiring", "contact", "support", "sales", "info", "hello",
+    "enquir", "dear", "sir", "madam", "whom",
+}
+
+
+def _extract_first_name(raw: str | None) -> str | None:
+    """
+    Try to extract a usable first name from a potentially dirty scraped string.
+    Returns None if the value looks like noise.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+    # Drop anything after common separators like '→', '|', '-', ','
+    for sep in ("→", "|", " - ", ","):
+        if sep in raw:
+            raw = raw.split(sep)[0].strip()
+    words = raw.split()
+    if not words:
+        return None
+    first = words[0].lower()
+    # Reject if first word matches known bad tokens
+    if any(first.startswith(bad) for bad in _BAD_NAME_TOKENS):
+        return None
+    # Reject if looks like an email or URL
+    if "@" in raw or "." in first:
+        return None
+    # Reject if more than 4 words (probably a title or garbage)
+    if len(words) > 4:
+        return None
+    # Return just the first word (first name)
+    return words[0].capitalize()
+
+
+def _fill_email_template(subject_tmpl: str, body_tmpl: str, target: dict) -> dict:
+    first_name = _extract_first_name(target.get("contact_name"))
+    greeting = f"Hi {first_name}," if first_name else "Hi,"
+    company = target.get("company_name", "")
+    subject = subject_tmpl.format(company_name=company)
+    body = body_tmpl.format(company_name=company, greeting=greeting)
+    return {"subject": subject, "body": body}
+
+
 async def generate_cold_email(target: dict) -> dict:
-    persona = _load_persona()
-    prompt = build_cold_email_prompt(persona, target)
-
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=400,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = response.content[0].text.strip()
-
-    # Strip markdown code fences if present
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    try:
-        result = json.loads(raw)
-        return {"subject": _clean(result.get("subject", "")), "body": _clean(result.get("body", ""))}
-    except json.JSONDecodeError:
-        lines = raw.split("\n")
-        subject = lines[0].replace("Subject:", "").strip().strip('"')
-        body = "\n".join(lines[1:]).strip()
-        return {"subject": _clean(subject), "body": _clean(body)}
+    if target.get("has_open_roles"):
+        return _fill_email_template(_EMAIL_HIRING_SUBJECT, _EMAIL_HIRING_BODY, target)
+    return _fill_email_template(_EMAIL_NOT_HIRING_SUBJECT, _EMAIL_NOT_HIRING_BODY, target)
 
 
 async def generate_followup(
